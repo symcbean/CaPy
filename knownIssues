@@ -1,0 +1,4 @@
+Attempting to change the CA user password via the API does not appear to work.
+This seems to be a CyberArk issue rather than a CaPy one.
+
+
