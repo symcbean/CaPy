@@ -655,7 +655,7 @@ debugEnabled=1
 
 # set initial logging to sensitive.....
 log=logger("",1,0,0)
-configFile='cyberark.ini'
+configFile='/etc/opt/CaPy.ini'
 cybClient={}
 
 opts = readCmdLine()
