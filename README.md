@@ -18,6 +18,7 @@ e.g.
     cp CaPy /usr/local/bin
     gzip CaPy.1 && cp CaPy.1.gz /usr/local/man/man1/
     gzip CaPy.5 && cp CaPy.5.gz /usr/local/man/man5/
+    gzip CaPyscript.5 && cp CaPyscript.5.gz /usr/local/man/man5
     mkdir /etc/CaPy && cp CaPy.ini /etc/CaPy
    
 Read the 2 man pages then edit CaPy.ini to match your environment.

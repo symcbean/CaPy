@@ -1,11 +1,6 @@
+#! /usr/bin/python
 # Written for Python 2 (!erk)
-# on RH 6, requires the python-requests rpm to be installed
 
-# https://www.w3schools.com/python/python_json.asp
-# https://docs.python.org/3/tutorial/inputoutput.html
-# https://github.com/infamousjoeg/CyberArk-RESTAPI
-
-# python-2.6.6-66.el6_8.x86_64
 import sys, getpass, time, re, datetime
 import ConfigParser, os, socket, syslog
 import requests
@@ -90,6 +85,8 @@ def doGetAccount():
     
 
 # change password for agent locally and in vault
+# NB this does not appear to work.
+
 def doRotateAgentPassword(log):
     global config,opts
     if (not(os.access(config["PvwaPassFile"], os.W_OK))):
