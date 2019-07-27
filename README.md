@@ -72,8 +72,15 @@ It is expected that the command will usually be invoked within a shell script an
   Rotate the password for the PvwaUser configured in the ini file and update the local cleartext copy
   
 * **-g** **TARGET**  
-  Retrieve the password for the account and print to stdout. TARHET can be specified using the following formats:  SAFENAME/USERNAME, SAFENAME/USERNAME@HOSTNAME, SAFENAME/USERNAME@HOSTNAME,DBNAME, USERNAME, USERNAME@HOSTNAME, USERNAME@HOSTNAME,DBNAME
-  
+  Retrieve the password for the account and print to stdout. TARGET can be specified using the following formats:  
+...
+SAFENAME/USERNAME
+SAFENAME/USERNAME@HOSTNAME
+SAFENAME/USERNAME@HOSTNAME,DBNAME
+USERNAME
+USERNAME@HOSTNAME
+USERNAME@HOSTNAME,DBNAME
+... 
 * **-i** **CAUSER**  
   Log in to PVWA as CAUSER rather instead of using details from config file. User will be prompted for password via stdin. This will
   Suppress the automatic password rotation unless -t is explicitly specified.
