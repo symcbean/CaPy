@@ -1,0 +1,46 @@
+.TH CAPYSCRIPT 5
+.SH NAME
+CaPy Scripts 
+
+.SH SYNOPSIS
+.B HTTPmethod path JSONdata
+
+.SH DESCRIPTION
+When invoked to run a script, CaPy will transparently handle
+the authentication, and execute a series of actions
+writing the responses to stdout.
+
+Scripts are expected to be a one or more lines in the form:
+
+.B HTTPmethod path JSONdata
+
+i.e. three attributes, separated by spaces, terminated by a newline 
+and optionally enclosed in single quotes. 
+
+If a line has less than three or more than 4 attributes it is passed directly 
+to stdout.
+
+The HTTPmethod should be one of GET, POST, PUT, DELETE.
+
+The path is appended to "https://" + PvwaHost + "/" + PvwaPath to create the URL. 
+If the method is GET, the JSON data is converted to urlencoded arguments and 
+added to the URL.
+
+The fourth attribute may be used as a comment field.
+
+If the API returns anything other than a 2xx status, script processing will
+cease.
+
+.SH EXAMPLE
+    { requestQueue:
+
+    GET /API/IncomingRequests {onlywaiting:false,expired:false}
+
+    } systemHealth:
+
+    GET /API/ComponentsMonitoringSummary {}
+
+    }
+
+This will return a single JSON object with 2 properties; a list of requests
+and the system health report.
