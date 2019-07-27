@@ -1,4 +1,4 @@
-#CaPy
+#CaPy#
 
 CaPy is a simple command line tool for accessing the CyberArk REST API.
 
@@ -11,10 +11,11 @@ the agent is shown below.
 
 It requires Python 2.7 and python-requests
 
-## Installation
+## Installation ##
 Copy CaPy (the python program), CaPy.1 and CaPy.5 to suitable locations
 and the default ini file to /etc/CaPy/CaPy.ini
 e.g. 
+
     cp CaPy /usr/local/bin
     gzip CaPy.1 && cp CaPy.1.gz /usr/local/man/man1/
     gzip CaPy.5 && cp CaPy.5.gz /usr/local/man/man5/
