@@ -1,0 +1,688 @@
+# Written for Python 2 (!erk)
+# on RH 6, requires the python-requests rpm to be installed
+
+# https://www.w3schools.com/python/python_json.asp
+# https://docs.python.org/3/tutorial/inputoutput.html
+# https://github.com/infamousjoeg/CyberArk-RESTAPI
+
+# python-2.6.6-66.el6_8.x86_64
+import sys, getpass, time, re, datetime
+import ConfigParser, os, socket, syslog
+import requests
+import json
+import argparse
+import random
+import csv
+
+# skip down to 'main'
+
+#
+# Check if the default config file allows custom config files
+def defaultConfigAllowUserFiles(configFile,section,log):
+     defaultConfig=readConfig(configFile,section,log)
+     if (defaultConfig["AllowUserFiles"]):
+         return True
+     else:
+         log.error("Default config does not allow user files", 3)
+         return false
+#
+# multiplexes the various actions specified on the command line
+def handleAction(config,opts,log):
+    global cybClient
+    cybClient=cybREST(config["PvwaHost"], config["PvwaPath"], getUser(config,opts,log), getPass(config,opts,log), log, config["verifyCert"])
+
+    if (not (opts.interactive)):
+        passfile=os.stat(config["PvwaPassFile"])
+        age_in_days=int((time.time()-passfile.st_mtime)/86400)
+
+    if (opts.password): 
+        log.error("Action=set manual password for " + config["PvwaUser"] + " in " + os.path.abspath(config["PvwaPassFile"]), -2)
+        newpass=getpass.getpass("Password [" + config["PvwaUser"] + "]: ")
+        return setPassLocal(newpass)
+
+    if (not (opts.interactive) and (opts.rotateOnly or (age_in_days>config["MaxPassAge"]))):
+        if (age_in_days>int(config['MinPassAge'])):
+            # rotate password
+            log.error("Applying agent password rotation for "  + config["PvwaUser"], -2)
+            doRotateAgentPassword(log)
+        else:
+            log.error("Password age is only " + str(age_in_days) + " days old (min=" + str(config['MinPassAge']) + ") - not changing",-1)
+
+    if (opts.checkin):
+        log.error("Checkin account", -1)
+        doCheckin()
+    elif (opts.reason): 
+        # create a request for a dual auth account
+        log.error("Submitting request for dual auth permission", -2)
+        doDualAuthRequest()
+    elif (opts.getaccount):
+        log.error("Attempting to retrieve password", -2)
+        doGetAccount()
+    elif (opts.health): 
+        log.error("Retrieving cluster health data", -2)
+        doHealthCheck()
+    elif (opts.listreq):
+        log.error("List requests", -2)
+        doListRequests()
+    elif (opts.rotateOnly):
+        log.error("Rotate password", -2)
+        doRotateAgentPassword(log)
+    elif (opts.script):
+        log.error("Run script", -2)
+        doRunScript(config,opts,log)
+
+    log.error("logging off from CyberArk", -2)
+    doLogOff()    
+    log.shutdown()
+    sys.exit()
+
+def doDualAuthRequest():
+    global config,opts
+    global cybClient
+    data=cybClient.getDualAuthAccount(opts.getaccount, int(opts.waittime), opts.reason, opts.nowait)
+
+def doGetAccount():
+    global config,opts
+    global cybClient
+    data=cybClient.getAccount(opts.getaccount, int(opts.waittime[0]))
+    if (data):
+       print data
+    
+
+# change password for agent locally and in vault
+def doRotateAgentPassword(log):
+    global config,opts
+    if (not(os.access(config["PvwaPassFile"], os.W_OK))):
+        log.error("Local password file is not writeable", 2)
+
+    nextPass=genPass(int(config['PvwaPassChars']))
+    if (setPassInVault(nextPass,config['PvwaUser'])):
+        log.error("Changed password in vault", -1)
+        return setPassLocal(nextPass,log)
+    else:
+        log.error("Failed to change vault password", -3)
+        return False
+
+def doHealthCheck():
+    global cybClient
+    data=cybClient.healthCheck()
+    print(json.dumps(data))
+
+def doListRequests():
+    global cybClient
+    data=cybClient.listRequests()
+    print(json.dumps(data))
+   
+def doLogOff():
+    global cybClient
+    cybClient.logoff()
+ 
+def setPassInVault(nextPass,user):
+    global cybClient
+    return cybClient.changeMyPass(nextPass,user)
+    
+def setPassLocal(newpass,log):
+    global config,opts
+    passfile=os.path.abspath(config["PvwaPassFile"])
+    file=open(passfile,"w")
+    file.write(newpass)
+    log.error("Local password file updated", -2)
+    return file.close
+
+def doCheckin():
+    global cybClient
+    data=cybClient.checkin(opts.checkin)
+    
+def getPass(config,opts,log):
+    if (opts.interactive):
+        data=getpass.getpass("Password [" + opts.interactive[0] + "]")
+    else:
+        usefilename=os.path.abspath(config["PvwaPassFile"])
+        log.error("Retrieveing password from " + usefilename, -1)
+        file=open(usefilename,"r")
+        data=file.readline().strip()
+        file.close
+    return data
+   
+def getUser(config,opts,log):
+    if (opts.interactive): 
+        return opts.interactive[0]
+    else:
+        return config["PvwaUser"]
+
+def doRunScript(config,opts,log):
+    global cybClient
+    if not(config["AllowUserFiles"]):
+       log.error("Running of scripts not permitted in this config", 2)
+       sys.exit()
+    with open(opts.script[0], 'r') as fp:
+       rd=csv.reader(fp, delimiter=' ', lineterminator=os.linesep,quotechar="'")
+       for cmd in rd:
+           if (3==len(cmd) or 4==len(cmd)):
+               reply=cybClient.custom(cmd[0], cmd[1], cmd[2])
+               print reply
+           else:
+               print ' '.join(cmd)
+           if (4==len(cmd)):
+               print cmd[3]
+           # print ">>>>" + os.linesep
+     
+       
+def readCmdLine():
+    parser=argparse.ArgumentParser(description='CyberArk Agent.')
+    parser.add_argument('-v', '--verbose', action='store_true', dest='verbose', help='display debug')
+    parser.add_argument('-c', '--config', dest='configFile', nargs=1, metavar='FILENAME', help='Use a different config file')
+    parser.add_argument('-r', '--reason', dest='reason', nargs=1, metavar='ARG', help='Reason for usage')
+    parser.add_argument('-q', '--nowait', action='store_true', dest='nowait', help='Exit after creating daul auth request')
+    parser.add_argument('-w', '--waittme', dest='waittime', nargs=1, default=[0], metavar='MINS', help='Wait up to MINS minutes if account not immediately available')
+    parser.add_argument('-p', '--password',  action='store_true', dest='password', help='set agent password')
+    parser.add_argument('-g', '--get', nargs=1, dest='getaccount', metavar='SAFE/NAME', help='Retrieve the account NAME from SAFE')
+    parser.add_argument('-t', dest='rotateOnly', action='store_true', help='Rotate the agent password only')
+    parser.add_argument('-q', dest='query', action='store_true', help='show the config file only')
+    parser.add_argument('-e', dest='health', action='store_true', help='get server health')
+    parser.add_argument('-i', dest='interactive', nargs=1, metavar='USER', help='log into CyberArk as USER (prompt for password)')
+    parser.add_argument('-l', dest='listreq', action='store_true', help='list outstanding dual auth requests')
+    parser.add_argument('SECTION', help='Read config from SECTION of config file')
+    parser.add_argument('-k', '--checkin', nargs=1, dest='checkin', metavar='SAFE/NAME', help='Unlock NAME in SAFE')
+    parser.add_argument('-x', '--x-script', nargs=1, dest='script', metavar='SCRIPTFILENAME', help='Run the operations in the script file')
+    args=parser.parse_args()
+    return args
+   
+def readConfig(configFile, section,log):
+    global opts
+    parser = ConfigParser.ConfigParser({"verifyCert":True,"AllowUserFiles":False})
+    parser.read(os.path.abspath(configFile))
+    # this is a bit messy...should be refactored....
+    config={}
+    config["PvwaUser"]=parser.get(section, 'PvwaUser')
+    config["PvwaPassFile"]=parser.get(section, 'PvwaPassFile')
+    config["PvwaHost"]=parser.get(section,"PvwaHost")
+    config["PvwaPath"]=parser.get(section,"PvwaPath")
+    config["verifyCert"]=parser.getboolean(section,"verifyCert")
+    config["PvwaPassChars"]=parser.get(section,"PvwaPassChars")
+    config["MaxPassAge"]=parser.get(section,"MaxPassAge")
+    config["MinPassAge"]=parser.get(section,"MinPassAge")
+    config["SyslogThreshold"]=parser.get(section,"SyslogThreshold")
+    config["EmailThreshold"]=parser.get(section,"EmailThreshold")
+    config["StderrThreshold"]=parser.get(section,"StderrThreshold")
+    config["AllowUserFiles"]=parser.getboolean(section,"AllowUserFiles")
+    config["notify"]=parser.get("common","notify")
+    config["SMTPserver"]=parser.get("common", "SMTPserver")
+    config["SMTPport"]=parser.get("common", "SMTPport")
+    config["SMTPuser"]=parser.get("common", "SMTPuser")
+    config["SMTPpass"]=parser.get("common", "SMTPpass")
+    return config
+
+def updateLogger(log, config):
+    log.email_threshold=int(config["EmailThreshold"])
+    log.stderr_threshold=int(config["StderrThreshold"])
+    log.syslog_threshold=int(config["SyslogThreshold"])
+    log.email_notify=config["notify"]
+    log.SMTPserver=config["SMTPserver"]
+    log.SMTPport=config["SMTPport"]
+    log.SMTPuser=config["SMTPuser"]
+    log.STMPpass=config["SMTPpass"]
+ 
+def showConfigFile(configFile,log):
+    log.error("configfile is " + os.path.abspath(configFile) + os.linesep + os.linesep,-1)
+    checkConfigFileName(configFile,log)
+    with open(configFile, "r") as file:
+        print("".join(file.readlines()))
+    log.shutdown()
+    sys.exit(0)
+
+def checkConfigFileName(configFile,log):
+    # in the absence of checks this will allow reading of arbitrary files if invoked via sudo
+    global opts
+    if (os.path.islink(configFile)):
+        log.error("Suggested configfile is a symlink - this is not allowed",3)
+# following is redundant....
+        sys.exit(-3)
+    pattern=re.compile(".*\.ini$")
+    if (pattern.match(configFile)):
+        log.error("Acceptable as configFile: "  + os.path.abspath(configFile), -1)
+    else:
+        log.error("ConfigFiles must have a ini ending", 3)
+# following is redundant....
+        sys.exit(-2)
+            
+def genPass(passlength):
+    upper="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    lower="abcdefghijklmnopqrstuvwxyz"
+    numbers="0123456789"
+    other="!@#%^*()_-+."
+    p="".join(random.sample(numbers,2))
+    p+="".join(random.sample(other,2))
+    p+="".join(random.sample(upper,2))
+    p+="".join(random.sample(lower,passlength-6))
+    p="".join(random.sample(p,len(p)))
+    return p
+
+class logger:
+    def __init__(self, email_notify, email_threshold, stderr_threshold, syslog_threshold):
+        self.email_notify=email_notify
+        self.email_threshold=int(email_threshold)
+        self.stderr_threshold=int(stderr_threshold)
+        self.syslog_threshold=int(syslog_threshold)
+        self.peak_level=0
+        self.subject="info:"
+        self.log="Started"+os.linesep
+        syslog.openlog("CaPy")
+
+
+    def error(self, msg, level):
+        # msg is some test, if level is >0 hen program should abort
+        # abs(level) indicates severity
+        
+        # track the warnings/debug/notice events
+        if (self.peak_level<abs(level)):
+           self.peak_level=abs(level)
+        self.log+=msg + os.linesep
+
+        # this will make the mathematicians puke - but done this way for clarity....
+        if ((abs(level)>=self.stderr_threshold) or (level>0)):
+           sys.stderr.write(msg+os.linesep)
+
+        if (abs(level)>=self.syslog_threshold):
+           if (level>0):
+              syslog.syslog(syslog.LOG_ERR, msg)
+              self.subject="ERROR!"
+           elif (level<=-3):
+              syslog.syslog(syslog.LOG_WARNING, msg) 
+              if (abs(level)>=self.peak_level):
+                  self.subject="Warning:"
+           elif (level<=-2):
+              syslog.syslog(syslog.LOG_NOTICE, msg)
+              if (abs(level)>=self.peak_level):
+                  self.subject="Notice:"
+           elif (level<=-1):
+              syslog.syslog(syslog.LOG_INFO, msg)
+              if (abs(level)>=self.peak_level):
+                   self.subject="info:"
+
+        if (level>0):
+            self.shutdown()
+            sys.exit(level)
+
+    def shutdown(self):
+        if (self.email_notify and self.peak_level>=self.email_threshold):
+            # send an email to notify the admins
+            server=smtplib.SMTP(self.SMTPserver, self.SMTPport)
+            if (len(self.SMTPpass) and len(self.SMTPuser)):
+                server.login(self.SMTPuser,self.SMTPpass)
+
+            if ( "" == self.SMTPuser):
+                self.SMTPuser = "CaPy"
+
+            subj="Subject: " + self.subject + " CyberArk Python Agent" + os.linesep + os.linesep
+            fromAddr=self.SMTPuser + '@' + socket.gethostname()
+            server.sendmail(fromAddr, self.email_notify, msg)
+    
+class cybREST: 
+    def __init__(self, host, base_path, username, password, logger, verify):
+        logger.error("creating cybRest obj",-1)
+        self.host=host
+        self.base_path=base_path
+        self.username=username
+        self.password=password
+        self.headers={
+            "Content-Type":"application/json"
+        }
+        self.authtoken=""
+        self.client=False
+        self.logger=logger
+        self.verify=True
+        self.started=time.time()
+        self.SMTPhost=''
+        self.SMTPport=25
+        self.SMTPuser=''
+        self.SMTPpass=''
+        self.accountSearch={}
+        # now=datetime.strftime("[%Y-%m-%d %H:%i:%s %Z]")
+        # logger.error("CyberArk client initialized at " + now, -1)
+        if not(verify):
+            self.verify=False
+        
+    def checkRestReply(self, response, context, redact=False):
+        if (2==int(response.status_code/100)): 
+            # we need to hide any auth tokens in the response
+            data=response.text
+            if (redact):
+                data="(response redacted)"
+            msg=context + " / Response = " + str(response.status_code) \
+               + os.linesep + data
+            self.logger.error(msg, 0)
+        else: 
+            msg=context + " Failed" + os.linesep + "Status=" + str(response.status_code) \
+                + os.linesep + "Reason=" + response.reason + " in cybRest.checkRestReply"
+            self.logger.error(msg, 1)
+
+
+    # https://pam.example.com/PasswordVault/WebServices/auth/Cyberark/CyberArkAuthenticationService.svc/Logon
+    def authenticate(self):
+        self.logger.error("cybRest.authenticate",-1)
+        endpoint="https://" + self.host + self.base_path + "/WebServices/auth/Cyberark/CyberArkAuthenticationService.svc/Logon"
+        self.logger.error("connecting " + endpoint, -1)
+        data={"username": self.username, "password": self.password}
+        # "useRadiusAuthentication", "connectionNumber" optionsl
+        reply=requests.post(endpoint, data=json.dumps(data), headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "Logon Request", redact=True)
+        authresponse=json.loads(reply.text)
+        # should be object with single property "CyberArkLogonResult" - this is the session ID/Authorization token
+        if (authresponse["CyberArkLogonResult"]): 
+            self.logger.error("Received auth token", -1)
+            self.authtoken=authresponse["CyberArkLogonResult"]
+            self.headers["Authorization"]=authresponse["CyberArkLogonResult"]
+            return True
+        else:
+            self.logger.error("Logon failed for " + self.username, 1)
+
+    # https://pam.example.com/PasswordVault/WebServices/auth/Cyberark/CyberArkAuthenticationService.svc/Logoff
+    def logoff(self):
+        self.logger.error("cybRest.logoff", -1)
+        if (self.authtoken):
+            endpoint="https://" + self.host + self.base_path + "/WebServices/auth/Cyberark/CyberArkAuthenticationService.svc/Logoff"
+            self.logger.error("connecting " + endpoint, -1)
+            reply=requests.post(endpoint, headers=self.headers, verify=self.verify)
+            self.checkRestReply(reply, "Logoff Request")
+        else:
+            self.logger.error("(not logged in)", -1)
+
+    # https://pam.example.com/PasswordVault/WebServices/PIMServices.svc/Users/Username=_____    
+    def changeMyPass(self, newPass,user):
+        self.logger.error("changing agent password", -3)
+        if (""==self.authtoken):
+            self.authenticate()
+        endpoint="https://" + self.host + self.base_path + "/WebServices/PIMServices.svc/Users/" + user
+        self.logger.error("connecting " + endpoint, -1)
+        data={"NewPassword": newPass}
+        reply=requests.put(endpoint, data=json.dumps(data), headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "change my password(" + user +")")
+        self.logger.error("Password updated " + reply.reason, -1)
+        return True
+        
+    # https://pam.example.com/PasswordVault/api/ComponentsMonitoringDetails/PVWA
+    # https://pamexample.com/PasswordVault/api/ComponentsMonitoringDetails/SessionManagement
+    # https://pam.example.com/PasswordVault/api/ComponentsMonitoringDetails/CPM
+    def healthCheck(self):
+        self.logger.error("cybRest.healthCheck",-1)
+        if (""==self.authtoken):
+            self.authenticate()
+        result=dict()
+        components=["SessionManagement","PVWA","CPM"]
+        for component in components:
+            endpoint="https://" + self.host + self.base_path + "/api/ComponentsMonitoringDetails/" + component
+            self.logger.error("connecting " + endpoint, -1)
+            reply=requests.get(endpoint, headers=self.headers, verify=self.verify)
+            self.checkRestReply(reply, "Retrieving health check for " + component)
+            result[component]=json.loads(reply.text)
+        return result
+
+    def listRequests(self):
+        self.logger.error("cybRest.healthCheck",-1)
+        if (""==self.authtoken):
+            self.authenticate()
+        endpoint="https://" + self.host + self.base_path + "/api/IncomingRequests?onlywaiting=true&expired=false"
+        self.logger.error("connecting " + endpoint, -1)
+        reply=requests.get(endpoint, headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "list requests")
+        return json.loads(reply.text)
+
+    # https://pam.example.com/PasswordVault/API/MyRequests
+    # https://www.youtube.com/watch?v=zxzUfEUN5dA
+    def getDualAuthAccount(self, accountname, waittime, reason, nowait):
+        self.logger.error("handle Dual auth request", -1)
+        started=time.time()
+        if (""==self.authtoken):
+            self.authenticate()
+        accountData=self.resolveAccountId(accountname,dualAuthTTL=waittime+6)
+        accountid=accountData[0]
+        waittime=accountData[1]
+        if (False==accountid):
+		return False
+        requestID=self.createDualAuthReq(accountid, waittime, reason)
+        if (False == requestID):
+             return False
+        if (nowait):
+             return True
+
+        dualAuth=self.awaitAuth(requestID, waittime)
+        elapsed=time.time()-started
+        if (False==dualAuth):
+             return False
+        else:
+             return self.getAccountById(accountid, 1, dualAuth, waittime*60 - elapsed)
+
+    def createDualAuthReq(self, accountid, waittime, reason):
+        self.logger.error("create Dual auth request", -1)
+        endpoint="https://" + self.host + self.base_path + "/API/MyRequests"
+        # what about multiple access?
+        data={"accountID": accountid, "Reason": reason, "FromDate": self.fromTime(), "ToDate": self.toTime(waittime)}
+        reply=requests.post(endpoint, data=json.dumps(data), headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "Creating Dual Auth Request")
+        authreq=json.loads(reply.text)
+        if (("RequestID" in authreq) and len(authreq["RequestID"])):
+           return authreq["RequestID"]
+        else:
+           return False
+
+    def fromTime(self):
+        starttime=int(time.time()) - 180
+        return starttime
+
+    def toTime(self, duration):
+        endtime=int(time.time()) + 60 * duration + 180
+        return endtime
+
+    def awaitAuth(self, requestID, waittime):
+        self.logger.error("Awaiting dual auth...(waittime=" + str(waittime) + ")", -1)
+        sleeptime=5
+        maxPollInterval=60
+        started=time.time()
+        endpoint="https://" + self.host + self.base_path + "/api/myrequests/" + requestID
+        while (time.time()<started+(waittime*60)):
+            if (sleeptime<maxPollInterval):
+               sleeptime=min(sleeptime*2, maxPollInterval)
+            now=time.time()
+            # dont wait longer than the timeout
+            if ( now+sleeptime-started > (waittime*60) ):
+               sleeptime=started + (waittime*60) - now - 1
+            self.logger.error("Sleeping for " + str(sleeptime), -1)
+            time.sleep(int(sleeptime))
+            reply=requests.get(endpoint, headers=self.headers, verify=self.verify)
+            self.checkRestReply(reply, "Polling dual auth request")
+            myreq=json.loads(reply.text)
+            if ( 7==myreq["Status"]):
+               self.logger.error("Dual auth request declined", 2)
+               return False
+            if ( 4==myreq["Status"]):
+               self.logger.error("Dual auth request declined", 2)
+               return False
+            if ( 2==myreq["Status"]):
+               self.logger.error("Dual auth request approved", -1)
+               return True
+            if ( 1 != myreq["Status"]):
+               self.logger.error("Unknown error in dual auth request", 2)
+               return False
+        # if we get this far, the TTL has expired
+        self.logger.error("Dual auth wait time has expired", -2)
+        return False
+
+    # https://pam.example.com/PasswordVault/API/Accounts/27_10/CheckIn
+    def checkin(self, accountname):
+         self.logger.error("Checkin account", -1)
+         if (""==self.authtoken):
+            self.authenticate()
+         accountData=self.resolveAccountId(accountname)
+         accountid=accountData[0]
+         if (False==accountid):
+             return False
+         endpoint="https://" + self.host + self.base_path + "/API/Accounts/" + accountid + "/CheckIn"
+         reply=requests.post(endpoint, data='{}', headers=self.headers, verify=self.verify)
+         self.checkRestReply(reply, "Checking in exclusive account")
+         return True
+
+    def custom(self, method, url, rdata):
+         self.logger.error("Applying custom request", -1)
+         if (""==self.authtoken):
+             self.authenticate()
+         endpoint="https://" + self.host + self.base_path + url
+         if ('POST'==method):
+             reply=requests.post(endpoint, data=json.loads(rdata), headers=self.headers, verify=self.verify)
+         elif ("PUT"==method):
+             reply=requests.put(endpoint, data=json.loads(rdata), headers=self.headers, verify=self.verify)
+         elif ("GET"==method):
+             reply=requests.get(endpoint, data=json.loads(rdata), headers=self.headers, verify=self.verify)
+         elif ("DELETE"==method):
+             reply=requests.delete(endpoint, data=json.loads(rdata), headers=self.headers, verify=self.verify)
+         self.checkRestReply(reply, "Custom request")
+         return reply.text
+
+    # https://pam.example.com/PasswordVault/WebServices/PIMServices.svc/Accounts?Keywords=username&Safe=safename
+    def resolveAccountId(self, accountname, dualAuthTTL=0):
+        if (""==self.authtoken):
+            self.authenticate()
+        parts=accountname[0].split("/")
+        if (2<len(parts)):
+            self.logger.error("SAFE/NAME must contain only one '/'. Recommended: SAFENAME/USERNAME@ADDRESS", 2)
+        if (1<len(parts)):
+            safename=parts[0]
+            keywords=re.sub("(@| |,|:)", " ", parts[1])
+        else:
+            safename=""
+            keywords=re.sub("(@| |,|:)", " ", parts[0])
+        data={'Safe': safename, 'Keywords': keywords}
+        # keep this data for later checks....
+        self.accountSearch=data
+        endpoint="https://" + self.host + self.base_path \
+            + "/WebServices/PIMServices.svc/Accounts"
+        reply=requests.get(endpoint, params=data, headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "Resolving supplied name to AccountID")
+        data=json.loads(reply.text)
+        if (0==data["Count"]):
+            self.logger.error("Unable to find requested account: " + accountname[0], 2)
+        if (1<int(data["Count"])):
+            self.logger.error("Requested account name \"" + accountname[0] +"\" is ambiguous (" \
+                + int(data["Count"]) + " matches)", 2)
+        accountid=data["accounts"][0]["AccountID"]
+        if ( 0 == dualAuthTTL ):
+           return [ accountid ]
+        MaxTimeFrame=self.checkPreReqs(accountid, dualAuthTTL)
+####
+        if (dualAuthTTL>MaxTimeFrame):
+           self.logger.error("Requested time frame (" + dualAuthTTL + ") excceds configured max (" + MaxTimeFrame +" mins)", -3)
+           dualAuthTTL=MaxTimeFrame
+        return [ accountid, dualAuthTTL ]
+
+    def getAccount(self, accountname, waittime):
+        accountData=self.resolveAccountId(accountname)
+        accountid=accountData[0]
+        if (False==accountid):
+                return False
+        return self.getAccountById(accountid, 0, {}, waittime * 60)
+
+    # https://pam.example.com/AIMWebService/api/Accounts?AppID=RESTExamples&Safe=P-LIN-ROOT-SSHKEYS&Folder=Root&Object=Database-MicrosoftSQLServer-sql01.cyberark.local-Svc_BambooHR
+    # /PasswordVault/api/Accounts/20_62/password/retrieve
+    # for dualAuth accounts, by the time thread gets here, either the dualAuth will have been handled, or
+    # the user never told the program the account was dual authorized
+    def getAccountById(self, accountId, withDualAuth, dualAuth, waitseconds):
+        self.isAccountLocked(accountId, waitseconds)
+        endpoint="https://" + self.host + self.base_path + \
+            "/WebServices/PIMServices.svc/Accounts/" + accountId + "/Credentials"
+        # reply=requests.post(endpoint, data=data, headers=self.headers, verify=self.verify)
+        reply=requests.get(endpoint, headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "Retrieving password", redact=True)
+        result=reply.text.strip().strip("\"")
+        return result
+
+    def checkPreReqs(self, accountId, usingDualAuth):
+        # self.logger.error("Checking prerequisites", -1)
+        endpoint="https://" + self.host + self.base_path \
+           + "/api/Accounts/" + accountId + "/Prerequisites"
+        reply=requests.get(endpoint, headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "Checking pre-requisites")
+        data=json.loads(reply.text)
+        if (data["DualControl"]["Required"] and not usingDualAuth):
+            self.logger.error("This accounts requires dual control authorization",2)
+        elif (not usingDualAuth):
+            return True
+        # NB a lot of guesswork here about dual control works
+        # there's also a SkipDualControlPossible option in the response?
+        # there's probably other things we should look at here
+        return data["DualControl"]["MaxTimeFrame"]
+
+    def isAccountLocked(self, accountId, waitseconds):
+        sleeptime=5
+        maxPollInterval=60
+        started=time.time()
+        # the exit conditions for the loop are embedded....
+        while 1:
+           data=self.extendedAccountSearch(accountId)
+           if (""==data["Properties"]["LockedBy"]): 
+              return False
+           if (time.time()>started+waitseconds):
+              return True
+
+           sleeptime=min(sleeptime*2, maxPollInterval)
+           now=time.time()
+           if (now+sleeptime > started+waitseconds):
+              sleeptime = started + waitseconds - now
+           self.logger.error("Account locked - will check in " + str(sleeptime) + "seconds", -2)
+           time.sleep(int(sleeptime)) 
+        # will never reach here
+        return True
+    
+    def extendedAccountSearch(self, accountId):
+        # self.accountSearch        
+        endpoint="https://" + self.host + self.base_path \
+            + "/api/ExtendedAccounts"
+        keywords=self.accountSearch["Keywords"]
+        if (self.accountSearch["Safe"]):
+           keywords+=" " + self.accountSearch["Safe"]
+        data={"search": keywords, "offset": "0", "limit": "10"}
+        reply=requests.get(endpoint, params=data, headers=self.headers, verify=self.verify)
+        self.checkRestReply(reply, "Checking for locks")
+        data=json.loads(reply.text)
+        # for acc in data["entities"]["ExtendedListAccount"]:
+        for acc in data["Accounts"]:
+            if accountId == acc["AccountID"]:
+                return acc
+        self.logger.error("Unable to find account in extended search???", -3)
+        # we treat this as non-fatal and proceed to retrieve the account
+        return { "Properties": {"LockedBy": "" }}
+
+# -------------------------------------------------------------------
+# main
+# -------------------------------------------------------------------
+debugEnabled=1
+
+# set initial logging to sensitive.....
+log=logger("",1,0,0)
+configFile='cyberark.ini'
+cybClient={}
+
+opts = readCmdLine()
+
+if (opts.verbose):
+    print(opts)
+
+if (opts.configFile):
+    if (defaultConfigAllowUserFiles(configFile,opts.SECTION,log)):
+        configFile=opts.configFile[0]
+
+if (opts.query):
+    showConfigFile(configFile,log)
+
+config = readConfig(configFile,opts.SECTION,log)
+
+# now apply logging config
+updateLogger(log, config)
+log.error("Config read from " + os.path.abspath(configFile), -1)
+
+if (opts.verbose):
+    log.stderr_threshold=0
+    print("Read config file"+os.linesep)
+    print(str(config)+os.linesep)
+
+handleAction(config,opts,log)
+

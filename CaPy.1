@@ -1,0 +1,170 @@
+.TH CAPY 1
+.SH NAME
+CaPy \- a simple agent for interacting with CyberArk
+.SH SYNOPSIS
+.B CaPy 
+\fB\-h\fR
+
+.B CaPy
+[\fB\-v\fR]
+[\fB\-c\fR ALTCONFIG]
+.IR \-p 
+SECTIONNAME
+
+.B CaPy
+[\fB\-v\fR]
+[\fB\-c\fR ALTCONFIG]
+.IR \-t
+SECTIONNAME
+
+.B CaPy
+[\fB\-v\fR]
+[\fB\-i\fR CAUSER]
+[\fB\-c\fR ALTCONFIG]
+.IR \-e 
+SECTIONNAME
+
+.B CaPy
+[\fB\-v\fR]
+[\fB\-i\fR CAUSER]
+[\fB\-c\fR ALTCONFIG]
+[\fB\-r\fR REASON]
+[\fB\-w\fR MINUTES]
+[\fB\-q\fR]
+.IR \-g 
+SAFE/NAME  
+SECTIONNAME
+
+.B CaPy
+[\fB\-v\fR]
+[\fB\-i\fR CAUSER]
+[\fB\-c\fR ALTCONFIG]
+.IR -k 
+SAFE/NAME 
+SECTIONNAME
+
+.B CaPy
+[\fB\-v\fR]
+[\fB\-i\fR CAUSER]
+[\fB\-c\fR ALTCONFIG]
+.IR -l
+SECTIONNAME
+
+.SH DESCRIPTION
+Interact with CyberArk REST services to retrieve target accounts / cluster health information. Optional integration with email and syslog for auditing / support. 
+Any outcome other than the requested action will result in a non-zero exit status.
+
+Stored credentials used by the agent are rotated automatically according to the rules specified in the ini file.
+
+It is expected that the command will usually be invoked within a shell script and on a sudo island. 
+
+.SH OPTIONS
+
+.TP
+.BR \-c ", " \-\-config " " ALTCONFIG
+Read config from file ALTCONFIG rather than default /etc/opt/CaPy.ini 
+.BR
+This requires AllowUserFiles=True in the default ini file and uses the same section name for both default and custom config file.
+
+.TP
+.BR \-e
+Retrieve the cluster health report (returned in JSON format to stdout)
+
+.TP
+.BR \-t
+Rotate the password for the PvwaUser configured in the ini file and update the local cleartext copy
+
+.TP
+.BR \-g " " TARGET
+Retrieve the password for the account and print to stdout. TARHET can be specified using the following formats:  SAFENAME/USERNAME, SAFENAME/USERNAME@HOSTNAME, SAFENAME/USERNAME@HOSTNAME,DBNAME, USERNAME, USERNAME@HOSTNAME, USERNAME@HOSTNAME,DBNAME
+
+.TP
+.BR \-i " " CAUSER
+Log in to PVWA as CAUSER rather instead of using details from config file. User will be prompted for password via stdin. This will
+Suppress the automatic password rotation unless \-t is explicitly specified.
+
+
+.TP
+.BR \-k " " TARGET
+Check in an exclusive account
+
+.TP
+.BR \-l 
+List authorization requests which the log on account can approve. Output is in JSON format.
+
+.TP
+.BR \-q
+Quit (exit normally) after creating a dual authorized request and do not wait for request to be approved.
+
+.TP
+.BR \-r ", " --reason " " REASON
+Create a dual authorized request supplying the given REASON. The REST API will be polled at increasing intervals (initially 10 seconds) for approval. This option must be accompanied by -g SAFE/NAME and -w WAITTIME. In the absence of -q, the script will wait  for the request raised to be approved then retrieve the account. The script will ignore any previously created requests.
+.BR
+The timeframe for the request will be derived from the current time and the wait time. An additional 3 minutes is added to the start/end of the window to allow for clocks being out of sync.
+
+.TP
+.BR \-x ", " --x-script " " SCRIPTFILE
+Read a customer set of HTTP requests from SCRIPTFILE and apply. This requires AllowUserFiles=True in the ini file. 
+
+.TP
+.BR \-v ", " --verbose
+Enable verbose output (to stderr)
+
+.TP
+.BR \-w ", " --waittime " " WAITTIME
+Allow up to WAITTIME minutes for dual authorizied requests and/or for the account to be checked in (if checked out)
+
+.TP
+.BR SECTIONNAME
+Read config (see below) from named section in config file
+
+.SH EXAMPLES
+.TP
+.BR CaPy " " -g " " P-UNX-SSH/user01 " " default
+Retrieve password for the account
+.B user01
+from safe
+.B P-UNX-SSH 
+using the vault configuration in the section named "default" from the config file.
+The request will fail if the account is not immediately available.
+
+.TP
+.BR CaPy " " -w " " 2 " " -g " " user02 " " default
+Retrieve password for the account
+.B user01
+from any available safe. Allow up to 2 minutes (approx) for a locked account to be released. The request will fail if more than one record is found for "user02"
+
+.TP
+.BR CaPy " " -r " " 'Server " " restarted' " " -w " " 30 " " -g " " P-APP-MYSQL/dbuser02@db.example.com,contentdb " " default
+Create a dual-authorization request and retrieve the password for the account
+.B dbuser02
+Associated with the database
+.B contentdb
+and the host
+.B db.example.com
+from the safe named
+.B P-APP-MYSQL
+
+.TP
+.BR CaPy " " -k " " dbuser02,contentdb " " default
+Check in the exclusive account associated with database contentdb. No stdout output generated. Note that if the account is not checked out or is not exclusive, the script will
+exit with a status of 0
+
+.TP
+.BR CaPy " " -t " " -i " " CAADMUSER " " default
+Log in to CyberArk as CAADMUSER (CaPy will prompt for password) and change the password for the user defined in the [default] section of the ini file. i.e. Resynchromize the password.
+
+.SH FILES
+.I /etc/opt/CaPy.ini
+.RS
+The default configuration file. See
+.BR CaPy.ini (5)
+for further details 
+.BR
+.RE
+
+.I Custom scripts
+.RS
+See
+.BR CaPyscript (5)
+for details of customer scripts

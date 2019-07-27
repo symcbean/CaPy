@@ -1,0 +1,134 @@
+.TH CAPY.INI
+.SH NAME
+/etc/opt/CaPy.ini \- config file for CyberArk Python Agent
+
+.SH DESCRIPTION
+A file containing 2 or more sections defining paramters used by CaPy for interacting with a CyberArk vault webservice.
+
+Sections beging with a section name in squarebrackets and end at EOF or the start of the next section. Within each section there is a set of key/value 
+pairs (directives) seperated by by a '=' sign. Everything on the right hand side of the '=' sign is taken as the value - including whitespace and any quotes.
+Keys and values are case-sensitive.
+
+The file must contain a section named "common". The vault directives can be named anything other than "common".
+
+.SH Directives in common section
+
+.TP
+.BR notify
+An email address (specifically a single ADDR_SPEC) to which logging will be emailed
+
+.TP
+.BR SMTPserver
+Hostname or address of SMTP server
+
+.TP
+.BR SMTPport
+The port number ofr connecting to SMTP. Note that SMTPS is not supported, only STARTTLE.
+
+.TP
+.BR SMTPuser
+(Optional) username for authenticating to the SMTP service.
+
+.TP
+.BR SMTPpass
+(Optional) password for authenticating to the SMTP service.
+
+.SH Vault Directives
+
+.TP
+.BR PvwaHost
+Hostname or address of PVWA server
+
+.TP
+.BR PvwaPath
+Base path of the PVWA application (usually "/PasswordVault")
+
+.TP
+.BR verifyCert
+Value either "True" or "False". Whether or not to verify the signature on the PVWA certificate against the local CA store. Note that CaPy will complain
+repeatedly on stderr of this is set to "false".
+
+.TP
+.BR PvwaUser
+The username to logon to CyberArk with (if one is not specified opn the command line).
+
+.TP
+.BR PvwaPassFile
+Path to file containing the clear text of the password associated with PvwaUser. 
+
+.TP
+.BR PvwaPassChars
+number of characters required for theer password.
+
+.TP
+.BR MaxPassAge
+Number of days PvwaUser password can be set for without requiring change.
+
+.TP
+.BR MinPassAge
+Number of days after the last change before the PvwaUser password can be changed again.
+
+.TP
+.BR SyslogThreshold
+Integer value indicating the severity at which the CaPy agent will write messages to the syslog destinations. 0 corresponds to debug level, 1 to info, 2 to notive and 3 for fatal errors. To disable reporting to a destination, set the level to 4
+
+.TP 
+.BR StderrThreshold
+As per SyslogThreshold.
+
+.TP 
+.BR EmailThreshold
+Similar to SyslogThreshold and StderrThreshold, but all messages are saved. If the severity of any of the messages matches or exceeds this threshold, 
+the log of all the messages will be sent to the address defined in the "common" section.
+
+.SH EXAMPLE
+.IP
+[common]
+.br
+notify=CyberArkSupport@example.com
+.br
+SMTPserver=smtp.internal.example.com
+.br
+SMTPport=25
+.br
+SMTPuser=
+.br
+SMTPpass=
+.br
+# 
+.br
+# comments can be added in a line beginning #
+.br
+#
+.br
+[default]
+.br
+PvwaHost=pam.exmaple.com:443
+.br
+PvwaPath=/PasswordVault
+.br
+verifyCert=True
+.br
+PvwaUser=CAPYsvcUser
+.br
+PvwaPassFile=/etc/opt/secret.cred
+.br
+PvwaPassChars=14
+.br
+MaxPassAge=30
+.br
+MinPassAge=1
+.br
+EmailThreshold=3
+.br
+StderrThreshold=2
+.br
+SyslogThreshold=4
+.br
+.PP
+
+.SH SEE ALSO
+.I CaPy
+The CyberArk Python agent executable. See
+.BR CaPy (1)
+for further details
