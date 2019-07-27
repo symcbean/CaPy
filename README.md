@@ -1,4 +1,4 @@
-#CaPy#
+# CaPy #
 
 CaPy is a simple command line tool for accessing the CyberArk REST API.
 
