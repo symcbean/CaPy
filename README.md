@@ -81,13 +81,16 @@ It is expected that the command will usually be invoked within a shell script an
     USERNAME@HOSTNAME
     USERNAME@HOSTNAME,DBNAME
 ``` 
+
+The TARGET must uniquley identify an account held in CyberArk. If no account, or multiple accounts are matched, the request will fail.
+
 * **-i** **CAUSER**  
   Log in to PVWA as CAUSER rather instead of using details from config file. User will be prompted for password via stdin. This will
   Suppress the automatic password rotation unless -t is explicitly specified.
   
   
 * **-k** **TARGET**  
-  Check in an exclusive account
+  Check in an exclusive account. See TARGET specification description against **-g**
   
 * **-l**  
   List authorization requests which the log on account can approve. Output is in JSON format.

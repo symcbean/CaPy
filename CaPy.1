@@ -78,6 +78,9 @@ Rotate the password for the PvwaUser configured in the ini file and update the l
 .BR \-g " " TARGET
 Retrieve the password for the account and print to stdout. TARHET can be specified using the following formats:  SAFENAME/USERNAME, SAFENAME/USERNAME@HOSTNAME, SAFENAME/USERNAME@HOSTNAME,DBNAME, USERNAME, USERNAME@HOSTNAME, USERNAME@HOSTNAME,DBNAME
 
+The TARGET must uniquley identify an account held in CyberArk. If no account, or
+ multiple accounts are matched, the request will fail.
+
 .TP
 .BR \-i " " CAUSER
 Log in to PVWA as CAUSER rather instead of using details from config file. User will be prompted for password via stdin. This will
@@ -86,7 +89,8 @@ Suppress the automatic password rotation unless \-t is explicitly specified.
 
 .TP
 .BR \-k " " TARGET
-Check in an exclusive account
+Check in an exclusive account. See description of TARGET spefication under
+.BR \-g
 
 .TP
 .BR \-l 
