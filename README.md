@@ -32,29 +32,17 @@ Version 0.1, July 2019
 
 ```
 CaPy  -h
-</synopsis>
 
-<synopsis>
 CaPy [-v] [-c ALTCONFIG] -p  SECTIONNAME
-</synopsis>
 
-<synopsis>
 CaPy [-v] [-c ALTCONFIG] -t SECTIONNAME
-</synopsis>
 
-<synopsis>
 CaPy [-v] [-i CAUSER] [-c ALTCONFIG] -e  SECTIONNAME
-</synopsis>
 
-<synopsis>
 CaPy [-v] [-i CAUSER] [-c ALTCONFIG] [-r REASON] [-w MINUTES] [-q] -g  SAFE/NAME   SECTIONNAME
-</synopsis>
 
-<synopsis>
 CaPy [-v] [-i CAUSER] [-c ALTCONFIG] -k  SAFE/NAME  SECTIONNAME
-</synopsis>
 
-<synopsis>
 CaPy [-v] [-i CAUSER] [-c ALTCONFIG] -l SECTIONNAME
 ```
 
