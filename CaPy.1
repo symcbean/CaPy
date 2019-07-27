@@ -122,6 +122,15 @@ Allow up to WAITTIME minutes for dual authorizied requests and/or for the accoun
 .BR SECTIONNAME
 Read config (see below) from named section in config file
 
+.SH A NOTE ABOUT WAITING
+.TP
+For a request where CaPy needs to wait for completion (e.g. to retrieve
+a dual authorized password) it will poll the REST server at increasing intervals
+up to a maximum interval intended to keep the session alive.
+
+The initial and maximum intervals are hard-coded in the script as 5 seconds
+and 60 seconds respectively.
+
 .SH EXAMPLES
 .TP
 .BR CaPy " " -g " " P-UNX-SSH/user01 " " default
