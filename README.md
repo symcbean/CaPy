@@ -103,7 +103,7 @@ The TARGET must uniquley identify an account held in CyberArk. If no account, or
   The timeframe for the request will be derived from the current time and the wait time. An additional 3 minutes is added to the start/end of the window to allow for clocks being out of sync.
   
 * **-x**, **--x-script** **SCRIPTFILE**  
-  Read a customer set of HTTP requests from SCRIPTFILE and apply. This requires AllowUserFiles=True in the ini file. 
+  Read a custom set of HTTP requests from SCRIPTFILE and apply. This requires AllowUserFiles=True in the ini file. 
   
 * **-v**, **--verbose**  
   Enable verbose output (to stderr)
@@ -160,4 +160,4 @@ The TARGET must uniquley identify an account held in CyberArk. If no account, or
 *Custom scripts*
 : See
   **CaPyscript**(5)
-  for details of customer scripts
+  for details of custom scripts
