@@ -19,8 +19,9 @@ e.g.
     cp CaPy /usr/local/bin
     gzip CaPy.1 && cp CaPy.1.gz /usr/local/man/man1/
     gzip CaPy.5 && cp CaPy.5.gz /usr/local/man/man5/
-    gzip CaPyscript.5 && cp CaPyscript.5.gz /usr/local/man/man5
-    mkdir /etc/CaPy && cp CaPy.ini /etc/CaPy
+    gzip CaPyscript.5 && cp CaPyscript.5.gz /usr/local/man/man5/
+    mkdir /etc/opt 
+    cp CaPy.ini /etc/opt/
    
 Read the 2 man pages then edit CaPy.ini to match your environment.
 Optionally you can add a password to use for the client as described
